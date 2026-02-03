@@ -1,0 +1,2 @@
+"violation","n","T1","T2","s1","s2","alpha_allowed","beta_allowed","eta_star","used_fallback_eta","error"
+1,500,0.294,0.312,0.455591922667643,0.463309831538248,0.392319879375011,0.410319841452965,1.05105105105105,FALSE,NA
