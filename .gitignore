@@ -2,3 +2,16 @@ __pycache__/
 .env
 *.log
 .DS_Store
+
+# R session files
+.RData
+.Rhistory
+
+# Execution logs
+nohup.out
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Archives
+*.zip
