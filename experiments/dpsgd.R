@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
 
-# gaussian_parametric.R
+# dpsgd.R
 # ------------------------------------------------------------
 # Runner script in the SAME form as gaussian.R, but using the
-# parametric Gaussian classifier (no KDE).
+# noisy SGD mechanism and its claimed_curve.
 #
 # Usage:
-#   ./gaussian_parametric.R <mu> [--cores=250] [--trials=250] [--burn=100]
+#   ./noisy_sgd.R <tau> [--cores=250] [--trials=250] [--burn=100]
 # ------------------------------------------------------------
 
 get_script_name <- function(fallback = "script") {
@@ -27,30 +27,36 @@ get_flag_value <- function(args, flag, default = NULL) {
 `%||%` <- function(x, y) if (!is.null(x) && length(x) == 1L) x else y
 
 # ---- sources (ORDER MATTERS) ----
-source("../src_log/KDE_estimator.R")         # alpha_value / beta_value
-source("../src_log/classifiers.R")           # classifier factories (incl parametric)
-source("../src_log/functions_functional.R")  # audit engine
-source("../src_log/mechanisms.R")            # mechanisms
+source("../R/kde_estimator.R")    # alpha_value / beta_value
+source("../R/classifiers.R")     # make_kde_classifier()
+source("../R/mechanisms.R")      # make_noisy_sgd()
+source("../R/audit_engine.R")    # run_experiment()
 
-# ---- setup ----
-x1 <- rep(0, 10)
+# ---- fixed dataset ----
 x2 <- c(1, rep(0, 9))
+x1 <- rep(0, 10)
 
-Mechanism <- make_sum_gauss(sigma = 1)
+# ---- noisy SGD params ----
+sigma     <- 0.2
+theta_0   <- 0
+m         <- 5
+eta_learn <- 0.2
+T_        <- 10
 
+Mechanism <- make_noisy_sgd(theta_0, eta_learn, sigma, T_, m)
+
+# ---- args ----
 args <- commandArgs(trailingOnly = TRUE)
 
-# Required positional arg: mu
 positional <- args[!grepl("^--", args)]
 if (length(positional) < 1) {
-  stop("Usage: ./gaussian_parametric.R <mu> [--cores=250] [--trials=250] [--burn=100]")
+  stop("Usage: ./noisy_sgd.R <tau> [--cores=250] [--trials=250] [--burn=100]")
 }
 
-mu_arg <- positional[1]
-mu_val <- as.numeric(mu_arg)
-if (is.na(mu_val)) stop("<mu> must be numeric")
+tau_arg <- positional[1]
+tau <- as.integer(tau_arg)
+if (is.na(tau) || tau < 1) stop("<tau> must be a positive integer")
 
-# Optional flags
 cores_arg  <- get_flag_value(args, "--cores",  "250")
 trials_arg <- get_flag_value(args, "--trials", "250")
 burn_arg   <- get_flag_value(args, "--burn",   "100")
@@ -63,7 +69,6 @@ if (is.na(mc_cores) || mc_cores < 1) stop("--cores must be a positive integer")
 if (is.na(trials)   || trials   < 1) stop("--trials must be a positive integer")
 if (is.na(M_burn)   || M_burn   < 1) stop("--burn must be a positive integer")
 
-# Cap to available cores
 avail <- parallel::detectCores(logical = TRUE)
 mc_cores <- min(mc_cores, avail)
 
@@ -74,12 +79,29 @@ cat(
   "(avail:", avail, ")\n"
 )
 
-claimed_curve <- function(alpha) {
-  stats::pnorm(stats::qnorm(1 - alpha) - mu_val)
+# ---- claimed curve (same math as your script, just structured cleanly) ----
+
+calc_mu <- function(x, m, eta_learn, tau) {
+  sum(eta_learn * (1 - eta_learn)^(tau - x) / m)
 }
 
-# ---- choose classifier (PARAMETRIC GAUSSIAN) ----
-classifier <- make_parametric_gaussian_classifier(sigma = 1)
+# Build mu_vector
+mu_vector <- 0
+for (k in seq_len(tau)) {
+  combos <- utils::combn(tau, k)
+  mu_vals <- apply(combos, 2, calc_mu, m = m, eta_learn = eta_learn, tau = tau)
+  mu_vector <- c(mu_vector, mu_vals)
+}
+
+sigma_tilde <- eta_learn * sigma *
+  sqrt((1 - (1 - eta_learn)^(2 * tau)) / (1 - (1 - eta_learn)^2))
+
+claimed_curve <- function(alpha) {
+  mean(stats::pnorm(stats::qnorm(1 - alpha) - mu_vector / sigma_tilde))
+}
+
+# ---- choose classifier (KDE) ----
+classifier <- make_kde_classifier()
 
 # ---- run ----
 res <- run_experiment(
@@ -101,11 +123,11 @@ cat("\nReason summary:\n")
 print(sort(table(reasons), decreasing = TRUE), quote = FALSE)
 
 # ---- save ----
-script_name <- get_script_name("gaussian_parametric")
-outdir <- file.path("results", script_name)
+script_name <- get_script_name("noisy_sgd")
+outdir <- file.path("../results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", mu_arg, ".csv"))
+outfile <- file.path(outdir, paste0("stops_new_burn", M_burn, "_tau", tau_arg, ".csv"))
 
 n_trials <- length(res$stops)
 

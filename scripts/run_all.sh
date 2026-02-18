@@ -1,5 +1,7 @@
 #!/bin/bash
+set -euo pipefail
 
+cd "$(dirname "$0")/../experiments"
 
 CORES=250
 TRIALS=1000
@@ -12,8 +14,8 @@ for mu in 0.5 0.8 1.0; do
     --burn="$BURN"
 done
 
-for mu in 5 7 10; do
-    ./dpsgd.R "$mu" \
+for tau in 5 7 10; do
+    ./dpsgd.R "$tau" \
     --cores="$CORES" \
     --trials="$TRIALS" \
     --burn="$BURN"

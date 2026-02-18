@@ -37,10 +37,10 @@ get_flag_value <- function(args, flag, default = NULL) {
 `%||%` <- function(x, y) if (!is.null(x) && length(x) == 1L) x else y
 
 # ---- sources (ORDER MATTERS) ----
-source("../src_log/KDE_estimator.R")         # alpha_value / beta_value (may be unused here)
-source("../src_log/classifiers.R")           # classifier factories (incl parametric)
-source("../src_log/functions_functional.R")  # audit engine
-source("../src_log/mechanisms.R")            # mechanisms (may be unused here)
+source("../R/kde_estimator.R")    # alpha_value / beta_value
+source("../R/classifiers.R")     # classifier factories
+source("../R/mechanisms.R")      # mechanisms
+source("../R/audit_engine.R")    # audit engine
 
 # ---- setup ----
 x1 <- rep(0, 10)
@@ -254,7 +254,7 @@ print(sort(table(reasons), decreasing = TRUE), quote = FALSE)
 
 # ---- save ----
 script_name <- get_script_name("real_world")
-outdir <- file.path("results", script_name)
+outdir <- file.path("../results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 tagP <- tools::file_path_sans_ext(basename(dataP_arg))

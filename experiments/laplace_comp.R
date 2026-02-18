@@ -18,10 +18,10 @@ get_flag_value <- function(args, flag, default = NULL) {
 # -------------------------
 # Load source files
 # -------------------------
-source("../src_log/classifiers.R")
-source("../src_log/functions_functional.R")
-source("../src_log/mechanisms.R")
-source("../src_log/KDE_estimator.R")
+source("../R/kde_estimator.R")
+source("../R/classifiers.R")
+source("../R/mechanisms.R")
+source("../R/audit_engine.R")
 
 # -------------------------
 # Problem setup
@@ -140,7 +140,7 @@ res <- run_experiment(
 # -------------------------
 script_name <- get_script_name("laplace_eps")
 
-outdir <- file.path("results", script_name)
+outdir <- file.path("../results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", mu_val, mech_opt, ".csv"))

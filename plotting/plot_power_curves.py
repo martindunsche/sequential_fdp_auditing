@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-ROOT = "."
+ROOT = os.path.join(os.path.dirname(__file__), "..", "results")
 ALPHA = 0.05
 CENSOR_VALUES = {10050, 10100}  # plateaus that are NOT real rejections
 
@@ -133,8 +133,8 @@ def plot_one(csv_path: str) -> None:
 
 def main():
     for root, dirs, files in os.walk(ROOT):
-        # skip any subfolder with "_comp_" in its name + Jupyter checkpoints
-        dirs[:] = [d for d in dirs if "_comp_" not in d and d != ".ipynb_checkpoints"]
+        # skip comparison subfolders and Jupyter checkpoints
+        dirs[:] = [d for d in dirs if not d.endswith("_comp") and d != ".ipynb_checkpoints"]
 
         for f in files:
             if not (f.startswith("stops") and f.endswith(".csv")):

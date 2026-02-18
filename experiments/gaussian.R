@@ -1,16 +1,7 @@
 #!/usr/bin/env Rscript
 
-# laplace.R
 # ------------------------------------------------------------
-# Runner script in the SAME form as gaussian.R:
-# - positional <mu>
-# - flags: --cores, --trials, --burn
-# - functional engine + pluggable classifier
-# - prints Reason summary
-# - writes CSV with burn in filename + reason column
-#
-# Usage:
-#   ./laplace.R <mu> [--cores=250] [--trials=250] [--burn=100]
+# helpers
 # ------------------------------------------------------------
 
 get_script_name <- function(fallback = "script") {
@@ -30,31 +21,37 @@ get_flag_value <- function(args, flag, default = NULL) {
 
 `%||%` <- function(x, y) if (!is.null(x) && length(x) == 1L) x else y
 
-# ---- sources (ORDER MATTERS) ----
-source("../src_log/KDE_estimator.R")         # alpha_value / beta_value
-source("../src_log/classifiers.R")           # make_kde_classifier()
-source("../src_log/functions_functional.R")  # run_experiment()
-source("../src_log/mechanisms.R")            # make_sum_laplace()
+# ------------------------------------------------------------
+# sources
+# ------------------------------------------------------------
 
-# ---- inputs ----
-x2 <- c(1, rep(0, 9))
+source("../R/kde_estimator.R")
+source("../R/classifiers.R")
+source("../R/mechanisms.R")
+source("../R/audit_engine.R")
+
+# ------------------------------------------------------------
+# setup
+# ------------------------------------------------------------
+
 x1 <- rep(0, 10)
+x2 <- c(1, rep(0, 9))
 
-Mechanism <- make_sum_laplace(sigma = 1)
+Mechanism <- make_sum_gauss(sigma = 1)
 
 args <- commandArgs(trailingOnly = TRUE)
 
 # positional arg: mu
 positional <- args[!grepl("^--", args)]
 if (length(positional) < 1) {
-  stop("Usage: ./laplace.R <mu> [--cores=250] [--trials=250] [--burn=100]")
+  stop("Usage: ./gaussian.R <mu> [--cores=250] [--trials=250] [--burn=100]")
 }
 
 mu_arg <- positional[1]
 mu_val <- as.numeric(mu_arg)
 if (is.na(mu_val)) stop("<mu> must be numeric")
 
-# flags
+# optional flags
 cores_arg  <- get_flag_value(args, "--cores",  "250")
 trials_arg <- get_flag_value(args, "--trials", "250")
 burn_arg   <- get_flag_value(args, "--burn",   "100")
@@ -63,9 +60,9 @@ mc_cores <- as.integer(cores_arg)
 trials   <- as.integer(trials_arg)
 M_burn   <- as.integer(burn_arg)
 
-if (is.na(mc_cores) || mc_cores < 1) stop("--cores must be a positive integer")
-if (is.na(trials)   || trials   < 1) stop("--trials must be a positive integer")
-if (is.na(M_burn)   || M_burn   < 1) stop("--burn must be a positive integer")
+if (is.na(mc_cores) || mc_cores < 1) stop("--cores must be positive")
+if (is.na(trials)   || trials   < 1) stop("--trials must be positive")
+if (is.na(M_burn)   || M_burn   < 1) stop("--burn must be positive")
 
 avail <- parallel::detectCores(logical = TRUE)
 mc_cores <- min(mc_cores, avail)
@@ -77,23 +74,16 @@ cat(
   "(avail:", avail, ")\n"
 )
 
-# ---- claimed curve (unchanged logic) ----
 claimed_curve <- function(alpha) {
-  ifelse(
-    alpha < exp(-mu_val) / 2,
-    1 - exp(mu_val) * alpha,
-    ifelse(
-      exp(-mu_val) / 2 <= alpha & alpha <= 1 / 2,
-      exp(-mu_val) / (4 * alpha),
-      ifelse(alpha > 1 / 2, exp(-mu_val) * (1 - alpha), 0)
-    )
-  )
+  stats::pnorm(stats::qnorm(1 - alpha) - mu_val)
 }
 
-# ---- choose classifier (KDE) ----
 classifier <- make_kde_classifier()
 
-# ---- run ----
+# ------------------------------------------------------------
+# RUN (this must come BEFORE any NA diagnostics)
+# ------------------------------------------------------------
+
 res <- run_experiment(
   Mechanism     = Mechanism,
   x1            = x1,
@@ -106,18 +96,29 @@ res <- run_experiment(
   mc_cores      = mc_cores
 )
 
-# ---- diagnostics ----
-reasons <- vapply(res$raw, function(z) z$reason %||% "OK", character(1))
+# ------------------------------------------------------------
+# NA DIAGNOSTICS  (THIS IS THE CORRECT PLACE)
+# ------------------------------------------------------------
 
+reasons <- vapply(
+  res$raw,
+  function(z) z$reason %||% "OK",
+  character(1)
+)
+
+# optional console summary
 cat("\nReason summary:\n")
-print(sort(table(reasons), decreasing = TRUE), quote = FALSE)
+print(sort(table(reasons), decreasing = TRUE))
 
-# ---- save ----
-script_name <- get_script_name("laplace")
-outdir <- file.path("results", script_name)
+# ------------------------------------------------------------
+# SAVE RESULTS
+# ------------------------------------------------------------
+
+script_name <- get_script_name("gaussian")
+outdir <- file.path("../results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-outfile <- file.path(outdir, paste0("stops_new_burn", M_burn, "_", mu_arg, ".csv"))
+outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", mu_arg, ".csv"))
 
 n_trials <- length(res$stops)
 
