@@ -87,8 +87,9 @@ kde_refit <- function(
   xv   <- seq(-h / 2, h / 2, length.out = 1000)
   etas <- seq(0, eta_search_max, length.out = 1000)
 
-  a <- sapply(etas, alpha_value, xv, h, gw, hat_p, log_lr)
-  b <- sapply(etas, beta_value,  xv, h, gw, hat_q, log_lr)
+  ab <- alpha_beta_vectorized(etas, xv, h, gw, hat_p, hat_q, log_lr)
+  a  <- ab$a
+  b  <- ab$b
 
   ok <- which(a > 0 & b <= 1)
   eta_fallback <- etas[ceiling(length(etas) / 2)]
@@ -205,8 +206,9 @@ parametric_gaussian_refit <- function(
   xv   <- seq(-h / 2, h / 2, length.out = 1000)
   etas <- seq(0, eta_search_max, length.out = 1000)
 
-  a <- sapply(etas, alpha_value, xv, h, gw, hat_p, log_lr)
-  b <- sapply(etas, beta_value,  xv, h, gw, hat_q, log_lr)
+  ab <- alpha_beta_vectorized(etas, xv, h, gw, hat_p, hat_q, log_lr)
+  a  <- ab$a
+  b  <- ab$b
 
   ok <- which(a > 0 & b <= 1)
   eta_fallback <- etas[ceiling(length(etas) / 2)]
