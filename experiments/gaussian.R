@@ -52,13 +52,17 @@ mu_val <- as.numeric(mu_arg)
 if (is.na(mu_val)) stop("<mu> must be numeric")
 
 # optional flags
-cores_arg  <- get_flag_value(args, "--cores",  "250")
-trials_arg <- get_flag_value(args, "--trials", "250")
-burn_arg   <- get_flag_value(args, "--burn",   "100")
+cores_arg       <- get_flag_value(args, "--cores",       "250")
+trials_arg      <- get_flag_value(args, "--trials",      "250")
+burn_arg        <- get_flag_value(args, "--burn",        "100")
+qalpha_sims_arg <- get_flag_value(args, "--qalpha_sims", "10000")
+qalpha_kmax_arg <- get_flag_value(args, "--qalpha_kmax", "10000")
 
-mc_cores <- as.integer(cores_arg)
-trials   <- as.integer(trials_arg)
-M_burn   <- as.integer(burn_arg)
+mc_cores    <- as.integer(cores_arg)
+trials      <- as.integer(trials_arg)
+M_burn      <- as.integer(burn_arg)
+qalpha_sims <- as.integer(qalpha_sims_arg)
+qalpha_kmax <- as.integer(qalpha_kmax_arg)
 
 if (is.na(mc_cores) || mc_cores < 1) stop("--cores must be positive")
 if (is.na(trials)   || trials   < 1) stop("--trials must be positive")
@@ -93,7 +97,9 @@ res <- run_experiment(
   M_burn        = M_burn,
   h             = 0.1,
   trials        = trials,
-  mc_cores      = mc_cores
+  mc_cores      = mc_cores,
+  qalpha_sims   = qalpha_sims,
+  qalpha_kmax   = qalpha_kmax
 )
 
 # ------------------------------------------------------------
