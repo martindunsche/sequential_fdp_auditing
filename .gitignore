@@ -6,6 +6,7 @@ __pycache__/
 # R session files
 .RData
 .Rhistory
+.r_libs/
 
 # Execution logs
 nohup.out
@@ -14,4 +15,3 @@ nohup.out
 .ipynb_checkpoints/
 
 # Archives
-
