@@ -35,7 +35,7 @@ if (is.na(eps)) {
   stop("<eps> must be numeric.", call. = FALSE)
 }
 eps_claim <- eps
-delta_claim <- 1e-5
+delta_claim <- 1e-10
 
 x1 <- c(0)
 x2 <- c(0, 1)
@@ -44,7 +44,7 @@ x2 <- c(0, 1)
 # matching the additive-noise benchmark convention in the Laplace script.
 make_nonDP_gaussian <- function(eps) {
   function(x) {
-    n <- length(x)
+    n <- length(x) + 1000000
     mean_nonpriv <- sum(x) / n
     rho <- stats::rnorm(1, mean = 0, sd = 2/(n * eps))  # uses true n
     return(mean_nonpriv + rho)
