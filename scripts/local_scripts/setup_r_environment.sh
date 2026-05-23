@@ -100,7 +100,7 @@ install_sequential_fdp_r_packages() {
 
   Rscript -e '
     dir.create(Sys.getenv("R_LIBS_USER"), recursive = TRUE, showWarnings = FALSE)
-    pkgs <- c("KernSmooth", "rmutil")
+    pkgs <- c("KernSmooth", "rmutil", "pbmcapply")
     missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
     if (length(missing)) {
       install.packages(missing, lib = Sys.getenv("R_LIBS_USER"),
