@@ -3,6 +3,8 @@ __pycache__/
 *.log
 .DS_Store
 
+docs/
+
 # R session files
 .RData
 .Rhistory

@@ -277,37 +277,52 @@ run_many_sequential_audits <- function(
   eval_step = 100L,
   mc_cores = 8L,
   refit_threshold = 0.10,
-  boundary_tweaks = FALSE
+  boundary_tweaks = FALSE,
+  show_progress = FALSE
 ) {
   validate_classifier(classifier)
 
-  results_list <- parallel::mclapply(
-    seq_len(n_trials),
-    function(i) {
-      tryCatch(
-        sequential_audit_simple(
-          Mechanism = Mechanism,
-          x1 = x1,
-          x2 = x2,
-          M_burn = M_burn,
-          h = h,
-          eta_search_max = eta_search_max,
-          claimed_curve = claimed_curve,
-          q_alpha = q_alpha,
-          classifier = classifier,
-          max_iter = max_iter,
-          eval_step = eval_step,
-          refit_threshold = refit_threshold,
-          boundary_tweaks = boundary_tweaks
-        ),
-        error = function(e) {
-          message(sprintf("[Trial %d] Error: %s", i, conditionMessage(e)))
-          make_empty_result(conditionMessage(e))
-        }
-      )
-    },
-    mc.cores = mc_cores
-  )
+  run_one_trial <- function(i) {
+    tryCatch(
+      sequential_audit_simple(
+        Mechanism = Mechanism,
+        x1 = x1,
+        x2 = x2,
+        M_burn = M_burn,
+        h = h,
+        eta_search_max = eta_search_max,
+        claimed_curve = claimed_curve,
+        q_alpha = q_alpha,
+        classifier = classifier,
+        max_iter = max_iter,
+        eval_step = eval_step,
+        refit_threshold = refit_threshold,
+        boundary_tweaks = boundary_tweaks
+      ),
+      error = function(e) {
+        message(sprintf("[Trial %d] Error: %s", i, conditionMessage(e)))
+        make_empty_result(conditionMessage(e))
+      }
+    )
+  }
+
+  if (isTRUE(show_progress)) {
+    if (!requireNamespace("pbmcapply", quietly = TRUE)) {
+      stop("show_progress=TRUE requires the pbmcapply package.")
+    }
+    results_list <- pbmcapply::pbmclapply(
+      seq_len(n_trials),
+      run_one_trial,
+      mc.cores = mc_cores,
+      ignore.interactive = TRUE
+    )
+  } else {
+    results_list <- parallel::mclapply(
+      seq_len(n_trials),
+      run_one_trial,
+      mc.cores = mc_cores
+    )
+  }
 
   get1 <- function(z, nm) z[[nm]] %||% NA_real_
 
@@ -373,6 +388,7 @@ run_experiment <- function(
   mc_cores = 8L,
   refit_threshold = 0.10,
   boundary_tweaks = FALSE,
+  show_progress = FALSE,
   qalpha_sims = 10000,
   qalpha_kmax = 10000
 ) {
@@ -400,7 +416,8 @@ run_experiment <- function(
     eval_step = eval_step,
     mc_cores = mc_cores,
     refit_threshold = refit_threshold,
-    boundary_tweaks = boundary_tweaks
+    boundary_tweaks = boundary_tweaks,
+    show_progress = show_progress
   )
 
   cat("Violation rate:", res$violation_rate, "\n")
