@@ -53,18 +53,38 @@ make_nonDP_gaussian <- function(eps) {
 
 # DP Gaussian: uses privatized sample size n_tilde (DPGaussian1),
 # matching the additive-noise benchmark convention in the Laplace script.
-make_DP_gaussian <- function(eps) {
+# make_DP_gaussian <- function(eps) {
+#   function(x) {
+#     n <- length(x)
+
+#     tau <- stats::rnorm(1, mean = 0, sd = 2/eps)
+#     n_tilde <- max(1e-12, n + tau)
+
+#     mean_priv <- sum(x) / n_tilde
+
+#     rho <- stats::rnorm(1, mean = 0, sd = 2/(n_tilde * eps))
+
+#     return(mean_priv + rho)
+#   }
+# }
+
+make_DP_gaussian <- function(eps, delta = 1e-5) {
+  eps_part <- eps / 2
+  delta_part <- delta / 2
+
+  sigma_count <- sqrt(2 * log(1.25 / delta_part)) / eps_part
+  sigma_sum   <- sqrt(2 * log(1.25 / delta_part)) / eps_part
+
   function(x) {
     n <- length(x)
+    s <- sum(x)
 
-    tau <- stats::rnorm(1, mean = 0, sd = 2/eps)
+    tau <- stats::rnorm(1, mean = 0, sd = sigma_count)
+    z_s <- stats::rnorm(1, mean = 0, sd = sigma_sum)
+
     n_tilde <- max(1e-12, n + tau)
 
-    mean_priv <- sum(x) / n_tilde
-
-    rho <- stats::rnorm(1, mean = 0, sd = 2/(n_tilde * eps))
-
-    return(mean_priv + rho)
+    return((s + z_s) / n_tilde)
   }
 }
 
