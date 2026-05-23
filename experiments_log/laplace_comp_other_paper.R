@@ -28,35 +28,36 @@ source("../src_log/KDE_estimator.R")
 # -------------------------
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: <script>.R <mu> <DP|NonDP>", call. = FALSE)
+  stop("Usage: <script>.R <eps> <DP|NonDP>", call. = FALSE)
 }
-mu_val <- as.numeric(args[1])
-if (is.na(mu_val)) {
-  stop("<mu> must be numeric.", call. = FALSE)
+eps <- as.numeric(args[1])
+if (is.na(eps)) {
+  stop("<eps> must be numeric.", call. = FALSE)
 }
+eps_claim <- eps
 x1 <- c(0)
 x2 <- c(0, 1)
 
-make_nonDP_laplace <- function(mu_val) {
+make_nonDP_laplace <- function(eps) {
   function(x) {
     n <- length(x)
     mean_nonpriv <- sum(x) / n
-    rho <- rmutil::rlaplace(1, m = 0, s = 2/(n * mu_val))  # uses true n
+    rho <- rmutil::rlaplace(1, m = 0, s = 2/(n * eps))  # uses true n
     return(mean_nonpriv + rho)
   }
 }
 
 
-make_DP_laplace <- function(mu_val) {
+make_DP_laplace <- function(eps) {
   function(x) {
     n <- length(x)
     
-    tau <- rmutil::rlaplace(1, m = 0, s = 2/mu_val)  
+    tau <- rmutil::rlaplace(1, m = 0, s = 2/eps)  
     n_tilde <- max(1e-12, n + tau)
     
     mean_priv <- sum(x) / n_tilde
     
-    rho <- rmutil::rlaplace(1, m = 0, s = 2/(n_tilde * mu_val))
+    rho <- rmutil::rlaplace(1, m = 0, s = 2/(n_tilde * eps))
     
     return(mean_priv + rho)
   }
@@ -75,8 +76,8 @@ if (!mech_opt %in% c("DP", "NONDP")) {
 
 Mechanism <- switch(
   mech_opt,
-  "DP"    = make_DP_laplace(mu_val),
-  "NONDP" = make_nonDP_laplace(mu_val)
+  "DP"    = make_DP_laplace(eps),
+  "NONDP" = make_nonDP_laplace(eps)
 )
 
 cat("Running mechanism:", mech_opt, "\n")
@@ -108,21 +109,21 @@ cat(
 # Claimed privacy curve
 # -------------------------
 claimed_curve <- function(alpha) {
-  ifelse(
-    alpha < exp(-mu_val) / 2,
-    1 - exp(mu_val) * alpha,
-    ifelse(
-      exp(-mu_val) / 2 <= alpha & alpha <= 1/2,
-      exp(-mu_val) / (4 * alpha),
-      ifelse(alpha > 1/2, exp(-mu_val) * (1 - alpha), 0)
-    )
+  pmax(
+    0,
+    1 - exp(eps_claim) * alpha,
+    exp(-eps_claim) * (1 - alpha)
   )
 }
+
 classifier <- make_kde_classifier()
 
 # -------------------------
 # Run experiment
 # -------------------------
+start_time <- Sys.time()
+cat("Started at:", format(start_time, "%Y-%m-%d %H:%M:%S %Z"), "\n")
+
 res <- run_experiment(
   Mechanism     = Mechanism,
   x1            = x1,
@@ -132,8 +133,14 @@ res <- run_experiment(
   M_burn        = M_burn,
   h             = 0.1,
   trials        = trials,
-  mc_cores      = mc_cores
+  mc_cores      = mc_cores,
+  show_progress = TRUE
 )
+
+end_time <- Sys.time()
+elapsed <- difftime(end_time, start_time, units = "mins")
+cat("Finished at:", format(end_time, "%Y-%m-%d %H:%M:%S %Z"), "\n")
+cat("Elapsed time:", round(as.numeric(elapsed), 2), "minutes\n")
 
 # -------------------------
 # Save results
@@ -143,7 +150,7 @@ script_name <- get_script_name("laplace_eps")
 outdir <- file.path("results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", mu_val, mech_opt, ".csv"))
+outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", eps, mech_opt, ".csv"))
 
 pad <- function(x, n, fill = NA) {
   if (is.null(x) || length(x) == 0) return(rep(fill, n))

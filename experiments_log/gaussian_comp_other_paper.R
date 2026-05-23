@@ -1,8 +1,5 @@
 #!/usr/bin/env Rscript
 
-# -------------------------
-# Helper: robust script name
-# -------------------------
 get_script_name <- function(fallback = "script") {
   args <- commandArgs(trailingOnly = FALSE)
   file_arg <- grep("^--file=", args, value = TRUE)
@@ -31,38 +28,63 @@ source("../src_log/KDE_estimator.R")
 # -------------------------
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: <script>.R <mu> <DP|NonDP>", call. = FALSE)
+  stop("Usage: <script>.R <eps> <DP|NonDP>", call. = FALSE)
 }
-mu_val <- as.numeric(args[1])
-if (is.na(mu_val)) {
-  stop("<mu> must be numeric.", call. = FALSE)
+eps <- as.numeric(args[1])
+if (is.na(eps)) {
+  stop("<eps> must be numeric.", call. = FALSE)
 }
+eps_claim <- eps
+delta_claim <- 1e-5
 
 x1 <- c(0)
 x2 <- c(0, 1)
 
-# Non-DP Gaussian: uses true sample size n (NonDPGaussian1)
-make_nonDP_gaussian <- function(mu_val ) {
+# Non-DP Gaussian: uses true sample size n (NonDPGaussian1),
+# matching the additive-noise benchmark convention in the Laplace script.
+make_nonDP_gaussian <- function(eps) {
   function(x) {
     n <- length(x)
-    # Private mean uses true n
     mean_nonpriv <- sum(x) / n
-    rho <- stats::rnorm(1, mean = 0, sd = 2/(n * mu_val))
+    rho <- stats::rnorm(1, mean = 0, sd = 2/(n * eps))  # uses true n
     return(mean_nonpriv + rho)
   }
 }
 
-# DP Gaussian: uses privatized sample size ñ (DPGaussian1)
-make_DP_gaussian <- function(mu_val) {
+# DP Gaussian: uses privatized sample size n_tilde (DPGaussian1),
+# matching the additive-noise benchmark convention in the Laplace script.
+# make_DP_gaussian <- function(eps) {
+#   function(x) {
+#     n <- length(x)
+
+#     tau <- stats::rnorm(1, mean = 0, sd = 2/eps)
+#     n_tilde <- max(1e-12, n + tau)
+
+#     mean_priv <- sum(x) / n_tilde
+
+#     rho <- stats::rnorm(1, mean = 0, sd = 2/(n_tilde * eps))
+
+#     return(mean_priv + rho)
+#   }
+# }
+
+make_DP_gaussian <- function(eps, delta = 1e-5) {
+  eps_part <- eps / 2
+  delta_part <- delta / 2
+
+  sigma_count <- sqrt(2 * log(1.25 / delta_part)) / eps_part
+  sigma_sum   <- sqrt(2 * log(1.25 / delta_part)) / eps_part
+
   function(x) {
     n <- length(x)
-    tau <- stats::rnorm(1, mean = 0, sd = 2/mu_val)
+    s <- sum(x)
+
+    tau <- stats::rnorm(1, mean = 0, sd = sigma_count)
+    z_s <- stats::rnorm(1, mean = 0, sd = sigma_sum)
+
     n_tilde <- max(1e-12, n + tau)
 
-    mean_priv <- sum(x) / n_tilde
-    rho <- stats::rnorm(1, mean = 0, sd = 2/(n_tilde * mu_val))
-
-    return(mean_priv + rho)
+    return((s + z_s) / n_tilde)
   }
 }
 
@@ -71,6 +93,7 @@ make_DP_gaussian <- function(mu_val) {
 # Parse command-line args
 # -------------------------
 
+
 mech_opt <- toupper(args[2])
 if (!mech_opt %in% c("DP", "NONDP")) {
   stop("<mechanism> must be one of: DP, NonDP", call. = FALSE)
@@ -78,8 +101,8 @@ if (!mech_opt %in% c("DP", "NONDP")) {
 
 Mechanism <- switch(
   mech_opt,
-  "DP"    = make_DP_gaussian(mu_val ),
-  "NONDP" = make_nonDP_gaussian(mu_val)
+  "DP"    = make_DP_gaussian(eps),
+  "NONDP" = make_nonDP_gaussian(eps)
 )
 
 cat("Running mechanism:", mech_opt, "\n")
@@ -107,18 +130,35 @@ cat(
   "mc_cores =", mc_cores,
   "(avail:", avail, ")\n"
 )
+cat("Claimed approximate-DP parameters: eps =", eps_claim,
+    "delta =", delta_claim, "\n")
 
 # -------------------------
 # Claimed privacy curve
 # -------------------------
+# f-DP lower bound equivalent to an (eps_claim, delta_claim)-DP claim:
+#   f_{eps,delta}(alpha)
+#   = max{0, 1 - delta - exp(eps) * alpha,
+#            exp(-eps) * (1 - delta - alpha)}.
+# This replaces the GDP/Gaussian-shift curve, because the benchmark
+# mechanisms here are the approximate-DP Gaussian analogues of the
+# Laplace mechanisms rather than equal-variance Gaussian shift pairs.
 claimed_curve <- function(alpha) {
-  stats::pnorm(stats::qnorm(1 - alpha) - mu_val)
+  pmax(
+    0,
+    1 - delta_claim - exp(eps_claim) * alpha,
+    exp(-eps_claim) * (1 - delta_claim - alpha)
+  )
 }
+
 classifier <- make_kde_classifier()
 
 # -------------------------
 # Run experiment
 # -------------------------
+start_time <- Sys.time()
+cat("Started at:", format(start_time, "%Y-%m-%d %H:%M:%S %Z"), "\n")
+
 res <- run_experiment(
   Mechanism     = Mechanism,
   x1            = x1,
@@ -128,17 +168,24 @@ res <- run_experiment(
   M_burn        = M_burn,
   h             = 0.1,
   trials        = trials,
-  mc_cores      = mc_cores
+  mc_cores      = mc_cores,
+  show_progress = TRUE
 )
+
+end_time <- Sys.time()
+elapsed <- difftime(end_time, start_time, units = "mins")
+cat("Finished at:", format(end_time, "%Y-%m-%d %H:%M:%S %Z"), "\n")
+cat("Elapsed time:", round(as.numeric(elapsed), 2), "minutes\n")
 
 # -------------------------
 # Save results
 # -------------------------
-script_name <- get_script_name("gauss_eps")
+script_name <- get_script_name("gaussian_eps")
+
 outdir <- file.path("results", script_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", mu_val, mech_opt,".csv"))
+outfile <- file.path(outdir, paste0("stops_burn", M_burn, "_", eps, mech_opt, ".csv"))
 
 pad <- function(x, n, fill = NA) {
   if (is.null(x) || length(x) == 0) return(rep(fill, n))
@@ -149,6 +196,41 @@ pad <- function(x, n, fill = NA) {
 
 n_trials <- length(res$stops)
 
+# ---- robust reason extraction: use res$reasons if meaningful, else fall back to res$raw ----
+get_reason1 <- function(z) {
+  # try a few plausible locations (covers different run_experiment versions)
+  cand <- list(
+    z$reason,
+    z$stop_reason,
+    z$reasons,
+    z$meta$reason,
+    z$info$reason
+  )
+
+  for (r in cand) {
+    if (is.null(r) || length(r) == 0) next
+    r <- as.character(r[1])
+    if (!is.na(r) && nzchar(r)) return(r)
+  }
+  "OK"
+}
+
+reasons <- NULL
+
+if (!is.null(res$reasons) && length(res$reasons) > 0) {
+  reasons <- as.character(res$reasons)
+  reasons[is.na(reasons) | reasons == ""] <- "OK"
+  reasons <- pad(reasons, n_trials, fill = "OK")
+} else if (!is.null(res$raw) && length(res$raw) > 0) {
+  reasons <- vapply(res$raw, get_reason1, character(1))
+} else {
+  reasons <- rep("OK", n_trials)
+}
+
+# Optional console summary (useful to confirm it's not all NA anymore)
+cat("\nReason summary:\n")
+print(sort(table(reasons), decreasing = TRUE))
+
 out_df <- data.frame(
   trial        = seq_len(n_trials),
   stopped_at_n = res$stops,
@@ -157,10 +239,9 @@ out_df <- data.frame(
   s1           = pad(res$last_s1, n_trials),
   s2           = pad(res$last_s2, n_trials),
   beta_allowed = pad(res$beta_allowed, n_trials),
-  reason       = pad(res$reasons, n_trials, fill = NA_character_),
+  reason       = pad(reasons, n_trials, fill = "OK"),
   row.names    = NULL
 )
-
 
 write.csv(out_df, outfile, row.names = FALSE)
 cat("Saved stopping times to:", outfile, "\n")
