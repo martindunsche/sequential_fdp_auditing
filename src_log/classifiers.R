@@ -136,7 +136,7 @@ kde_refit <- function(
     eta_star = eta_star,
     used_fallback_eta = used_fallback,
     classify = function(z) {
-      (log(fQ(z) + eps) - log(fP(z) + eps)) > log(eta_star)
+      (log(fP(z) + eps) - log(fQ(z) + eps)) <= log(eta_star)
     }
   )
 }
