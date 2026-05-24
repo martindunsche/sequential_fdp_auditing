@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
 # -----------------------------------------------------------------------------
-# NonDPGaussian1 sequential f-DP auditor sweep, both orientations
+# NonDPGaussian1 sequential f-DP auditor sweep, one orientation
 # -----------------------------------------------------------------------------
 # Purpose:
 #   For each claimed epsilon, instantiate the corresponding NonDPGaussian1
-#   benchmark mechanism, run the sequential f-DP auditor in both neighboring
-#   orientations D -> D' and D' -> D, save one per-epsilon
-#   stopping-time CSV with resume support, then summarize and draw two figures:
+#   benchmark mechanism, run the sequential f-DP auditor for one neighboring
+#   orientation D -> D', save one per-epsilon stopping-time CSV with resume
+#   support, then summarize and draw two figures:
 #     1) average stopping time to rejection vs epsilon,
 #     2) empirical rejection rate vs epsilon.
 #
@@ -19,9 +19,9 @@
 #
 # The mechanism parameter and the claimed epsilon are tied together.  That is,
 # at epsilon = e, this script audits M_e against the claim (e, delta)-DP.
-# Since DP is directional, the script audits both orientations and reports the
-# combined result: rejection if either orientation rejects.  By default the
-# sequential critical value uses a Bonferroni split over the two orientations.
+# The KDE classifier now uses the same likelihood-ratio side as the tradeoff
+# curve construction, so this Gaussian benchmark only needs the forward
+# neighboring orientation.
 # -----------------------------------------------------------------------------
 
 `%||%` <- function(x, y) if (!is.null(x) && length(x) == 1L) x else y
@@ -151,111 +151,23 @@ result_margin <- function(z) {
   safe_num(z$beta_allowed) - safe_num(z$T2_)
 }
 
-prefixed_result_df <- function(z, prefix) {
+row_from_result <- function(z, trial, eps) {
   reason <- get_reason1(z)
   violation <- normalize_violation(z)
-  stopped <- safe_num(z$stopped_at_n)
-  T1_ <- safe_num(z$T1_)
-  T2_ <- safe_num(z$T2_)
-  beta_allowed <- safe_num(z$beta_allowed)
 
-  out <- data.frame(
-    violation    = as.numeric(violation),
-    stopped_at_n = stopped,
-    T1_          = T1_,
-    T2_          = T2_,
+  data.frame(
+    trial        = as.integer(trial),
+    stopped_at_n = safe_num(z$stopped_at_n),
+    T1_          = safe_num(z$T1_),
+    T2_          = safe_num(z$T2_),
     s1           = safe_num(z$s1),
     s2           = safe_num(z$s2),
-    beta_allowed = beta_allowed,
-    margin       = beta_allowed - T2_,
+    beta_allowed = safe_num(z$beta_allowed),
+    margin       = result_margin(z),
     reason       = as.character(reason),
+    violation    = as.numeric(violation),
+    eps          = as.numeric(eps),
     row.names    = NULL
-  )
-  names(out) <- paste0(prefix, "_", names(out))
-  out
-}
-
-select_direction_result <- function(forward, reverse) {
-  vf <- normalize_violation(forward)
-  vr <- normalize_violation(reverse)
-  sf <- safe_num(forward$stopped_at_n)
-  sr <- safe_num(reverse$stopped_at_n)
-  mf <- result_margin(forward)
-  mr <- result_margin(reverse)
-
-  # Combined decision: reject if either orientation rejects.  If both reject,
-  # report the one that rejects first; if tied, report the larger margin
-  # beta_allowed - T2_.  Without rejection, report the direction with larger
-  # final margin, only for diagnostics.
-  if (isTRUE(vf == 1) || isTRUE(vr == 1)) {
-    candidates <- data.frame(
-      direction = c("forward", "reverse"),
-      violation = c(vf, vr),
-      stopped_at_n = c(sf, sr),
-      margin = c(mf, mr),
-      stringsAsFactors = FALSE
-    )
-    cand_ok <- !is.na(candidates$violation) & candidates$violation == 1 & is.finite(candidates$stopped_at_n)
-    candidates <- candidates[cand_ok, , drop = FALSE]
-    if (!nrow(candidates)) {
-      # Fallback in the unlikely case of malformed outputs.
-      candidates <- data.frame(
-        direction = c("forward", "reverse"),
-        stopped_at_n = c(sf, sr),
-        margin = c(mf, mr),
-        stringsAsFactors = FALSE
-      )
-    }
-    candidates <- candidates[order(candidates$stopped_at_n, -candidates$margin), , drop = FALSE]
-    selected_direction <- candidates$direction[1L]
-    selected <- if (identical(selected_direction, "forward")) forward else reverse
-    selected$violation <- 1
-    selected$stopped_at_n <- candidates$stopped_at_n[1L]
-    selected$reason <- paste0("violation in ", selected_direction, " orientation")
-    return(list(direction = selected_direction, result = selected))
-  }
-
-  # No rejection in either direction.  Select the larger final margin for
-  # diagnostic columns, but keep violation = 0.
-  if (is.finite(mf) || is.finite(mr)) {
-    selected_direction <- ifelse(!is.finite(mr) || (is.finite(mf) && mf >= mr), "forward", "reverse")
-  } else {
-    selected_direction <- "forward"
-  }
-  selected <- if (identical(selected_direction, "forward")) forward else reverse
-  selected$violation <- 0
-  selected$reason <- "max_iter reached without violation in either orientation"
-  list(direction = selected_direction, result = selected)
-}
-
-row_from_direction_pair <- function(pair, trial, eps) {
-  forward <- pair$forward
-  reverse <- pair$reverse
-  sel <- select_direction_result(forward, reverse)
-  z <- sel$result
-  reason <- get_reason1(z)
-  violation <- normalize_violation(z)
-
-  base <- data.frame(
-    trial              = as.integer(trial),
-    stopped_at_n       = safe_num(z$stopped_at_n),
-    selected_direction = as.character(sel$direction),
-    T1_                = safe_num(z$T1_),
-    T2_                = safe_num(z$T2_),
-    s1                 = safe_num(z$s1),
-    s2                 = safe_num(z$s2),
-    beta_allowed       = safe_num(z$beta_allowed),
-    margin             = result_margin(z),
-    reason             = as.character(reason),
-    violation          = as.numeric(violation),
-    eps                = as.numeric(eps),
-    row.names          = NULL
-  )
-
-  cbind(
-    base,
-    prefixed_result_df(forward, "fwd"),
-    prefixed_result_df(reverse, "rev")
   )
 }
 
@@ -263,9 +175,10 @@ read_existing_csv <- function(path) {
   if (!file.exists(path)) return(NULL)
   df <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE), error = function(e) NULL)
   if (is.null(df) || !nrow(df)) return(NULL)
-  # This script writes bidirectional CSVs.  Do not resume from older
-  # single-orientation CSVs even if they share a similar name.
-  required <- c("trial", "stopped_at_n", "selected_direction", "fwd_stopped_at_n", "rev_stopped_at_n")
+  # Do not resume from older bidirectional CSVs even if a user points this
+  # script at an old output directory.
+  if ("selected_direction" %in% names(df) || any(grepl("^(fwd|rev)_", names(df)))) return(NULL)
+  required <- c("trial", "stopped_at_n", "T1_", "T2_", "beta_allowed", "violation")
   if (!all(required %in% names(df))) return(NULL)
   df
 }
@@ -277,9 +190,7 @@ write_sorted_csv <- function(df, path) {
 
 get_completed_trials <- function(df, trials) {
   if (is.null(df) || !nrow(df)) return(integer(0L))
-  # Require the bidirectional schema.  Older single-orientation CSVs should
-  # not be treated as completed for this script.
-  required <- c("trial", "stopped_at_n", "selected_direction", "fwd_stopped_at_n", "rev_stopped_at_n")
+  required <- c("trial", "stopped_at_n", "T1_", "T2_", "beta_allowed", "violation")
   if (!all(required %in% names(df))) return(integer(0L))
   ok <- !is.na(df$trial) & df$trial >= 1L & df$trial <= trials & !is.na(df$stopped_at_n)
   unique(as.integer(df$trial[ok]))
@@ -299,23 +210,18 @@ run_missing_trials_for_eps <- function(
   Mechanism <- make_nonDP_gaussian(eps)
   claimed_curve <- make_approxdp_tradeoff(eps, delta_claim)
 
-  run_one_direction <- function(trial_id, direction) {
+  run_one <- function(trial_id) {
     if (!is.na(seed)) {
-      # Trial-level and direction-level seed makes resume independent of
-      # chunking/interruption and avoids coupling the two orientations.
-      dir_offset <- if (identical(direction, "forward")) 0L else 50000017L
-      seed_i <- as.integer((seed + 1000003L * eps_index + 97L * trial_id + dir_offset) %% .Machine$integer.max)
+      # Trial-level seed makes resume independent of chunking/interruption.
+      seed_i <- as.integer((seed + 1000003L * eps_index + 97L * trial_id) %% .Machine$integer.max)
       set.seed(seed_i)
     }
-
-    xx1 <- if (identical(direction, "forward")) x1 else x2
-    xx2 <- if (identical(direction, "forward")) x2 else x1
 
     tryCatch(
       sequential_audit_simple(
         Mechanism = Mechanism,
-        x1 = xx1,
-        x2 = xx2,
+        x1 = x1,
+        x2 = x2,
         M_burn = M_burn,
         h = h,
         eta_search_max = eta_search_max,
@@ -328,16 +234,9 @@ run_missing_trials_for_eps <- function(
         boundary_tweaks = boundary_tweaks
       ),
       error = function(e) {
-        message(sprintf("[eps=%s trial=%d direction=%s] Error: %s", fmt_eps(eps), trial_id, direction, conditionMessage(e)))
+        message(sprintf("[eps=%s trial=%d] Error: %s", fmt_eps(eps), trial_id, conditionMessage(e)))
         make_empty_result(conditionMessage(e))
       }
-    )
-  }
-
-  run_one <- function(trial_id) {
-    list(
-      forward = run_one_direction(trial_id, "forward"),
-      reverse = run_one_direction(trial_id, "reverse")
     )
   }
 
@@ -348,7 +247,7 @@ run_missing_trials_for_eps <- function(
   for (j in seq_along(chunks)) {
     trial_chunk <- chunks[[j]]
     cat(sprintf(
-      "eps=%s: running chunk %d/%d with %d trials, both orientations\n",
+      "eps=%s: running chunk %d/%d with %d trials\n",
       fmt_eps(eps), j, length(chunks), length(trial_chunk)
     ))
 
@@ -370,7 +269,7 @@ run_missing_trials_for_eps <- function(
 
     new_df <- do.call(
       rbind,
-      Map(function(z, id) row_from_direction_pair(z, trial = id, eps = eps), res_list, trial_chunk)
+      Map(function(z, id) row_from_result(z, trial = id, eps = eps), res_list, trial_chunk)
     )
 
     if (nrow(df)) {
@@ -448,12 +347,12 @@ summarize_one_csv <- function(path, eps, trials_expected) {
 
 save_summary <- function(eps_grid, trials, outdir, M_burn) {
   rows <- lapply(eps_grid, function(eps) {
-    path <- file.path(outdir, sprintf("stops_burn%d_%sNONDP_bidir.csv", M_burn, fmt_eps(eps)))
+    path <- file.path(outdir, sprintf("stops_burn%d_%sNONDP.csv", M_burn, fmt_eps(eps)))
     summarize_one_csv(path, eps = eps, trials_expected = trials)
   })
   summary_df <- do.call(rbind, rows)
   summary_df <- summary_df[order(summary_df$eps), , drop = FALSE]
-  out <- file.path(outdir, "nondp_gaussian_auditor_summary_bidir.csv")
+  out <- file.path(outdir, "nondp_gaussian_auditor_summary.csv")
   utils::write.csv(summary_df, out, row.names = FALSE)
   cat("Saved summary:", out, "\n")
   summary_df
@@ -572,8 +471,8 @@ plot_rejection_rate_orange <- function(summary_df, outfile) {
 }
 
 make_figures <- function(summary_df, outdir) {
-  stop_png <- file.path(outdir, "NonDPGaussian1_bidir_avg_stop_to_reject_by_eps.png")
-  rej_png  <- file.path(outdir, "NonDPGaussian1_bidir_rejection_rate_by_eps.png")
+  stop_png <- file.path(outdir, "NonDPGaussian1_avg_stop_to_reject_by_eps.png")
+  rej_png  <- file.path(outdir, "NonDPGaussian1_rejection_rate_by_eps.png")
 
   plot_avg_stop_with_boxes(summary_df, stop_png)
   plot_rejection_rate_orange(summary_df, rej_png)
@@ -617,7 +516,6 @@ show_progress <- get_flag_bool(args, "--show-progress", TRUE)
 overwrite <- get_flag_bool(args, "--overwrite", FALSE)
 plot_only <- get_flag_bool(args, "--plot-only", FALSE)
 boundary_tweaks <- get_flag_bool(args, "--boundary-tweaks", FALSE)
-split_alpha_orientations <- get_flag_bool(args, "--split-alpha-orientations", TRUE)
 
 if (is.na(trials) || trials < 1L) stop("--trials must be a positive integer")
 if (is.na(M_burn) || M_burn < 1L) stop("--burn must be a positive integer")
@@ -631,7 +529,7 @@ cat("Output dir:", outdir, "\n")
 cat("Epsilon grid:", paste(fmt_eps(eps_grid), collapse = ", "), "\n")
 cat("Trials:", trials, "burn:", M_burn, "cores:", mc_cores, "chunk-size:", chunk_size, "\n")
 cat("Claim delta:", delta_claim, "\n")
-cat("Both orientations: TRUE; split alpha over orientations:", split_alpha_orientations, "\n")
+cat("Orientation: forward only\n")
 
 x1 <- c(0)
 x2 <- c(0, 1)
@@ -644,14 +542,14 @@ if (!isTRUE(plot_only)) {
       "qalpha_burn%d_alpha%s_dirs%s_sims%d_kmax%d_eval%d.txt",
       M_burn,
       formatC(alpha, format = "fg", digits = 8),
-      ifelse(split_alpha_orientations, "2split", "2nosplit"),
+      "1",
       qalpha_sims,
       qalpha_kmax,
       eval_step
     )
   )
 
-  qalpha_tail <- if (isTRUE(split_alpha_orientations)) alpha / 4 else alpha / 2
+  qalpha_tail <- alpha / 2
   cat("q_alpha Gaussian-tail probability:", qalpha_tail, "\n")
 
   if (file.exists(qalpha_file)) {
@@ -673,7 +571,7 @@ if (!isTRUE(plot_only)) {
 
   for (ii in seq_along(eps_grid)) {
     eps <- eps_grid[ii]
-    outfile <- file.path(outdir, sprintf("stops_burn%d_%sNONDP_bidir.csv", M_burn, fmt_eps(eps)))
+    outfile <- file.path(outdir, sprintf("stops_burn%d_%sNONDP.csv", M_burn, fmt_eps(eps)))
 
     if (isTRUE(overwrite) && file.exists(outfile)) {
       file.remove(outfile)
