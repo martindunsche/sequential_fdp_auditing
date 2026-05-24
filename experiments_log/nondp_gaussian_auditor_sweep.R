@@ -6,9 +6,7 @@
 #   For each claimed epsilon, instantiate the corresponding NonDPGaussian1
 #   benchmark mechanism, run the sequential f-DP auditor for one neighboring
 #   orientation D -> D', save one per-epsilon stopping-time CSV with resume
-#   support, then summarize and draw two figures:
-#     1) average stopping time to rejection vs epsilon,
-#     2) empirical rejection rate vs epsilon.
+#   support, then write a summary CSV.
 #
 # Privacy object audited:
 #   The f-DP lower bound induced by the claimed (epsilon, delta)-DP statement,
@@ -294,6 +292,7 @@ summarize_one_csv <- function(path, eps, trials_expected) {
       rejection_rate = NA_real_, rejection_se = NA_real_, rejection_ci_low = NA_real_, rejection_ci_high = NA_real_,
       mean_stop_reject = NA_real_, sd_stop_reject = NA_real_, se_stop_reject = NA_real_,
       stop_reject_ci_low = NA_real_, stop_reject_ci_high = NA_real_,
+      mean_runtime = NA_real_, sd_runtime = NA_real_, se_runtime = NA_real_,
       mean_stop_all = NA_real_, sd_stop_all = NA_real_, se_stop_all = NA_real_,
       csv = path,
       row.names = NULL
@@ -337,6 +336,9 @@ summarize_one_csv <- function(path, eps, trials_expected) {
     se_stop_reject = se_rej,
     stop_reject_ci_low = if (is.finite(mean_rej) && is.finite(se_rej)) max(0, mean_rej - 1.96 * se_rej) else mean_rej,
     stop_reject_ci_high = if (is.finite(mean_rej) && is.finite(se_rej)) mean_rej + 1.96 * se_rej else mean_rej,
+    mean_runtime = mean_all,
+    sd_runtime = sd_all,
+    se_runtime = se_all,
     mean_stop_all = mean_all,
     sd_stop_all = sd_all,
     se_stop_all = se_all,
@@ -356,129 +358,6 @@ save_summary <- function(eps_grid, trials, outdir, M_burn) {
   utils::write.csv(summary_df, out, row.names = FALSE)
   cat("Saved summary:", out, "\n")
   summary_df
-}
-
-get_rejected_stop_values <- function(csv_path) {
-  if (!file.exists(csv_path)) return(numeric(0))
-
-  df <- utils::read.csv(csv_path, stringsAsFactors = FALSE)
-  if (!("stopped_at_n" %in% names(df))) return(numeric(0))
-
-  if ("violation" %in% names(df)) {
-    rejected <- df$violation == 1
-  } else if ("reason" %in% names(df)) {
-    rejected <- df$reason %in% c("violation", "violation at burn-in")
-  } else {
-    rejected <- rep(TRUE, nrow(df))
-  }
-  rejected[is.na(rejected)] <- FALSE
-
-  stops <- as.numeric(df$stopped_at_n)
-  stops[rejected & is.finite(stops)]
-}
-
-plot_avg_stop_with_boxes <- function(summary_df, outfile) {
-  ok <- is.finite(summary_df$eps) & is.finite(summary_df$mean_stop_reject)
-  df <- summary_df[ok, , drop = FALSE]
-  df <- df[order(df$eps), , drop = FALSE]
-  if (!nrow(df)) {
-    warning("No finite stopping-time data for plot: ", outfile)
-    return(invisible(FALSE))
-  }
-
-  box_vals <- lapply(df$csv, get_rejected_stop_values)
-  has_box <- vapply(box_vals, length, integer(1)) > 0L
-
-  grDevices::png(outfile, width = 1200, height = 850, res = 150)
-  oldpar <- graphics::par(no.readonly = TRUE)
-  on.exit({ graphics::par(oldpar); grDevices::dev.off() }, add = TRUE)
-
-  orange <- "#E69F00"
-  light_orange <- grDevices::adjustcolor(orange, alpha.f = 0.45)
-
-  y_all <- c(df$mean_stop_reject, unlist(box_vals, use.names = FALSE))
-  y_all <- y_all[is.finite(y_all)]
-  ylim <- range(y_all, na.rm = TRUE)
-  pad <- 0.06 * diff(ylim)
-  if (!is.finite(pad) || pad <= 0) pad <- 1
-  ylim <- c(max(0, ylim[1] - pad), ylim[2] + pad)
-
-  graphics::par(mar = c(5.2, 5.6, 2.2, 1.5), cex.axis = 1.2, cex.lab = 1.3)
-  graphics::plot(
-    df$eps, df$mean_stop_reject,
-    type = "n",
-    xlab = expression(Claimed~epsilon),
-    ylab = "Average stopping time to rejection",
-    ylim = ylim,
-    axes = FALSE
-  )
-  graphics::axis(1)
-  graphics::axis(2, las = 1)
-  graphics::box()
-  graphics::grid(col = "gray85", lty = "dotted")
-
-  if (any(has_box)) {
-    graphics::boxplot(
-      box_vals[has_box],
-      at = df$eps[has_box],
-      add = TRUE,
-      axes = FALSE,
-      boxwex = 0.018 * diff(range(df$eps)),
-      border = orange,
-      col = light_orange,
-      outline = FALSE,
-      whiskcol = orange,
-      staplecol = orange,
-      medcol = orange
-    )
-  }
-
-  graphics::lines(df$eps, df$mean_stop_reject, type = "b", pch = 19, lwd = 4.5, col = orange)
-  invisible(TRUE)
-}
-
-plot_rejection_rate_orange <- function(summary_df, outfile) {
-  ok <- is.finite(summary_df$eps) & is.finite(summary_df$rejection_rate)
-  df <- summary_df[ok, , drop = FALSE]
-  df <- df[order(df$eps), , drop = FALSE]
-  if (!nrow(df)) {
-    warning("No finite rejection-rate data for plot: ", outfile)
-    return(invisible(FALSE))
-  }
-
-  grDevices::png(outfile, width = 1200, height = 850, res = 150)
-  oldpar <- graphics::par(no.readonly = TRUE)
-  on.exit({ graphics::par(oldpar); grDevices::dev.off() }, add = TRUE)
-
-  orange <- "#E69F00"
-
-  graphics::par(mar = c(5.2, 5.6, 2.2, 1.5), cex.axis = 1.2, cex.lab = 1.3)
-  graphics::plot(
-    df$eps, df$rejection_rate,
-    type = "n",
-    xlab = expression(Claimed~epsilon),
-    ylab = "Empirical rejection rate",
-    ylim = c(0, 1),
-    axes = FALSE
-  )
-  graphics::axis(1)
-  graphics::axis(2, las = 1)
-  graphics::box()
-  graphics::grid(col = "gray85", lty = "dotted")
-  graphics::lines(df$eps, df$rejection_rate, type = "b", pch = 19, lwd = 4.5, col = orange)
-
-  invisible(TRUE)
-}
-
-make_figures <- function(summary_df, outdir) {
-  stop_png <- file.path(outdir, "NonDPGaussian1_avg_stop_to_reject_by_eps.png")
-  rej_png  <- file.path(outdir, "NonDPGaussian1_rejection_rate_by_eps.png")
-
-  plot_avg_stop_with_boxes(summary_df, stop_png)
-  plot_rejection_rate_orange(summary_df, rej_png)
-
-  cat("Saved figure:", stop_png, "\n")
-  cat("Saved figure:", rej_png, "\n")
 }
 
 # -----------------------------------------------------------------------------
@@ -514,7 +393,6 @@ if (is.na(seed)) seed <- NA_integer_
 
 show_progress <- get_flag_bool(args, "--show-progress", TRUE)
 overwrite <- get_flag_bool(args, "--overwrite", FALSE)
-plot_only <- get_flag_bool(args, "--plot-only", FALSE)
 boundary_tweaks <- get_flag_bool(args, "--boundary-tweaks", FALSE)
 
 if (is.na(trials) || trials < 1L) stop("--trials must be a positive integer")
@@ -535,86 +413,83 @@ x1 <- c(0)
 x2 <- c(0, 1)
 classifier <- make_kde_classifier()
 
-if (!isTRUE(plot_only)) {
-  qalpha_file <- file.path(
-    outdir,
-    sprintf(
-      "qalpha_burn%d_alpha%s_dirs%s_sims%d_kmax%d_eval%d.txt",
-      M_burn,
-      formatC(alpha, format = "fg", digits = 8),
-      "1",
-      qalpha_sims,
-      qalpha_kmax,
-      eval_step
-    )
+qalpha_file <- file.path(
+  outdir,
+  sprintf(
+    "qalpha_burn%d_alpha%s_dirs%s_sims%d_kmax%d_eval%d.txt",
+    M_burn,
+    formatC(alpha, format = "fg", digits = 8),
+    "1",
+    qalpha_sims,
+    qalpha_kmax,
+    eval_step
   )
+)
 
-  qalpha_tail <- alpha / 2
-  cat("q_alpha Gaussian-tail probability:", qalpha_tail, "\n")
+qalpha_tail <- alpha / 2
+cat("q_alpha Gaussian-tail probability:", qalpha_tail, "\n")
 
-  if (file.exists(qalpha_file)) {
-    q_alpha <- as.numeric(readLines(qalpha_file, warn = FALSE)[1L])
-    cat("Loaded cached q_alpha:", q_alpha, "from", qalpha_file, "\n")
-  } else {
-    if (!is.na(seed)) set.seed(seed)
-    cat("Computing q_alpha ...\n")
-    q_alpha <- simulate_gaussian_sup_quantile(
-      M = M_burn,
-      alpha = qalpha_tail,
-      sims = qalpha_sims,
-      k_max = qalpha_kmax,
-      eval_step = eval_step
-    )
-    writeLines(as.character(q_alpha), qalpha_file)
-    cat("Saved q_alpha:", q_alpha, "to", qalpha_file, "\n")
+if (file.exists(qalpha_file)) {
+  q_alpha <- as.numeric(readLines(qalpha_file, warn = FALSE)[1L])
+  cat("Loaded cached q_alpha:", q_alpha, "from", qalpha_file, "\n")
+} else {
+  if (!is.na(seed)) set.seed(seed)
+  cat("Computing q_alpha ...\n")
+  q_alpha <- simulate_gaussian_sup_quantile(
+    M = M_burn,
+    alpha = qalpha_tail,
+    sims = qalpha_sims,
+    k_max = qalpha_kmax,
+    eval_step = eval_step
+  )
+  writeLines(as.character(q_alpha), qalpha_file)
+  cat("Saved q_alpha:", q_alpha, "to", qalpha_file, "\n")
+}
+
+for (ii in seq_along(eps_grid)) {
+  eps <- eps_grid[ii]
+  outfile <- file.path(outdir, sprintf("stops_burn%d_%sNONDP.csv", M_burn, fmt_eps(eps)))
+
+  if (isTRUE(overwrite) && file.exists(outfile)) {
+    file.remove(outfile)
   }
 
-  for (ii in seq_along(eps_grid)) {
-    eps <- eps_grid[ii]
-    outfile <- file.path(outdir, sprintf("stops_burn%d_%sNONDP.csv", M_burn, fmt_eps(eps)))
+  existing <- read_existing_csv(outfile)
+  done <- get_completed_trials(existing, trials)
+  missing <- setdiff(seq_len(trials), done)
 
-    if (isTRUE(overwrite) && file.exists(outfile)) {
-      file.remove(outfile)
-    }
+  cat("\n--- NonDPGaussian1 eps=", fmt_eps(eps), " ---\n", sep = "")
+  cat("Completed:", length(done), "/", trials, " Missing:", length(missing), "\n")
 
-    existing <- read_existing_csv(outfile)
-    done <- get_completed_trials(existing, trials)
-    missing <- setdiff(seq_len(trials), done)
-
-    cat("\n--- NonDPGaussian1 eps=", fmt_eps(eps), " ---\n", sep = "")
-    cat("Completed:", length(done), "/", trials, " Missing:", length(missing), "\n")
-
-    if (length(missing) > 0L) {
-      run_missing_trials_for_eps(
-        eps = eps,
-        eps_index = ii,
-        missing_trials = missing,
-        existing_df = existing,
-        outfile = outfile,
-        q_alpha = q_alpha,
-        classifier = classifier,
-        x1 = x1,
-        x2 = x2,
-        M_burn = M_burn,
-        h = h,
-        eta_search_max = eta_search_max,
-        max_iter = max_iter,
-        eval_step = eval_step,
-        refit_threshold = refit_threshold,
-        boundary_tweaks = boundary_tweaks,
-        mc_cores = mc_cores,
-        show_progress = show_progress,
-        chunk_size = chunk_size,
-        seed = seed,
-        delta_claim = delta_claim
-      )
-    } else {
-      cat("Resume: nothing to run for eps=", fmt_eps(eps), "\n", sep = "")
-    }
+  if (length(missing) > 0L) {
+    run_missing_trials_for_eps(
+      eps = eps,
+      eps_index = ii,
+      missing_trials = missing,
+      existing_df = existing,
+      outfile = outfile,
+      q_alpha = q_alpha,
+      classifier = classifier,
+      x1 = x1,
+      x2 = x2,
+      M_burn = M_burn,
+      h = h,
+      eta_search_max = eta_search_max,
+      max_iter = max_iter,
+      eval_step = eval_step,
+      refit_threshold = refit_threshold,
+      boundary_tweaks = boundary_tweaks,
+      mc_cores = mc_cores,
+      show_progress = show_progress,
+      chunk_size = chunk_size,
+      seed = seed,
+      delta_claim = delta_claim
+    )
+  } else {
+    cat("Resume: nothing to run for eps=", fmt_eps(eps), "\n", sep = "")
   }
 }
 
-summary_df <- save_summary(eps_grid, trials, outdir, M_burn)
-make_figures(summary_df, outdir)
+save_summary(eps_grid, trials, outdir, M_burn)
 
 cat("Done.\n")
