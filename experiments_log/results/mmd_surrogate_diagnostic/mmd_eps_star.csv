@@ -1,3 +1,0 @@
-mechanism,mechanism_epsilon,delta,bandwidth,bandwidth_rule,mmd_hat,mmd_samples_used,eps_star
-NonDPGaussian1,0.1,1e-05,14.550884071216318,median heuristic (n0=20),0.285831774445323,4980,0.40985372163729816
-NonDPLaplace1,0.1,1e-05,19.38241894702236,median heuristic (n0=20),0.2185524242527166,4980,0.31155889185932484
