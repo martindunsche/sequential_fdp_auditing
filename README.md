@@ -81,6 +81,20 @@ python compute_mmd_eps_star_sweep.py
 
 See `sgd_exp_code/README.md` for instructions on regenerating the DP-SGD audit scores.
 
+## Figure and Table Index
+
+| # | Description | Script(s) |
+|---|-------------|-----------|
+| Figure 1 | Power / sample size / effect size triad | — (conceptual) |
+| Figure 2 | False rejection rates without proper sequential adjustment | — (conceptual) |
+| Figure 3 | Brownian motion paths vs. boundary function | — (conceptual) |
+| Figure 4 | Classifier selection rule: maximizing the square under the tradeoff curve | — (conceptual) |
+| Figure 5 | Empirical rejection rates across 1,000 runs — Gaussian (blackbox & whitebox), Laplace, DP-SGD | `gaussian.R`, `gaussian_parametric.R`, `laplace.R`, `dpsgd.R` → `plot_power_curve_wilson_ribbon.py` |
+| Figure 6 | Larger-ε behavior on NonDPGaussian1 and NonDPLaplace1 | `nondp_gaussian_auditor_sweep.R`, `nondp_laplace_auditor_sweep.R` → `plot_nondp_gaussian_auditor_sweep.py` |
+| Table 1 | Sample efficiency comparison vs. prior work on NonDP/DP Gaussian and Laplace benchmarks | `gaussian_comp_other_paper.R`, `laplace_comp_other_paper.R` |
+| Figure 7 | Estimated MMD margins for NonDPGaussian1 and NonDPLaplace1 | `compute_mmd_eps_star_sweep.py` |
+| Figure 8 | Empirical rejection rate and runtime vs. claimed μ (real-world DP-SGD) | `sgd_exp_code/scripts/gen_scores_DP_whitebox.py` + `real_world.R` → `real_world_plot.py` |
+
 ## Pre-computed Results
 
 Pre-computed results are in `experiments_log/results/`:
